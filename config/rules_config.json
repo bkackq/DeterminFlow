@@ -8,6 +8,29 @@
       "description": "默认可见的 Rules"
     }
   ],
-  "rule_configs": {},
-  "rules": {}
+  "rule_configs": {
+    "code-review-standards": {
+      "enabled": true,
+      "workflow_only": false
+    },
+    "no-destructive-operations": {
+      "enabled": true,
+      "workflow_only": false
+    }
+  },
+  "rules": {
+    "code-review-standards": {
+      "agent_types": [],
+      "group_ids": [
+        "default"
+      ]
+    },
+    "no-destructive-operations": {
+      "agent_types": [],
+      "group_ids": [
+        "default"
+      ]
+    }
+  },
+  "last_updated": "2026-09-03T12:59:50.571125+00:00"
 }

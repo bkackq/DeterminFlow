@@ -241,6 +241,64 @@ docker compose up --build
 若要回退到单进程，设置 `DETERMINFLOW_WORKFLOW_EXECUTOR_MODE=inline` 和
 `DETERMINFLOW_WORKFLOW_EXECUTOR_COUNT=1`。
 
+## 鉴权与登录
+
+DeterminFlow 默认**强制登录**：任何人访问 Web UI、调用 `/api/*` 接口或建立
+WebSocket 连接之前都必须先通过登录校验，否则返回 `401`。
+
+首次启动时若未配置任何账号，会使用内置默认账号登录，并在服务日志中打印醒目警告：
+
+```
+用户名：admin
+密码：admin
+```
+
+> ⚠️ 生产环境请务必修改默认密码。
+
+### 配置账号（二选一）
+
+1. **环境变量**（最简单，单用户）：在 `.env` 中设置
+
+   ```bash
+   AUTH_ENABLED=true
+   AUTH_USERNAME=admin
+   AUTH_PASSWORD=your-strong-password
+   ```
+
+2. **用户文件**（多用户）：在 `data/auth_users.json` 中配置（存在即生效，
+   与环境变量用户合并，同名时环境变量覆盖）
+
+   ```json
+   [
+     { "username": "alice", "password": "plain-text-password" },
+     { "username": "bob", "password_hash": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f" }
+   ]
+   ```
+
+   `password_hash` 为明文密码的 SHA-256 十六进制哈希，可用以下命令生成：
+
+   ```bash
+   python -c "import hashlib; print(hashlib.sha256(b'your-password').hexdigest())"
+   ```
+
+### 其他配置
+
+| 环境变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `AUTH_ENABLED` | 是否启用鉴权（`false` 仅用于本地调试） | `true` |
+| `AUTH_SECRET` | Token 签名密钥；不设置时自动生成并持久化到 `data/.auth_secret`（重启不失效） | 自动生成 |
+| `AUTH_TOKEN_TTL_DAYS` | 登录 Token 有效期（天） | `7` |
+| `AUTH_USERS_FILE` | 自定义用户文件路径 | `data/auth_users.json` |
+
+### 工作机制
+
+- 登录接口 `POST /api/auth/login` 校验用户名密码后签发**无状态 HMAC 签名 Token**
+  （内置有效期与过期时间，服务端无需会话存储，天然支持多 worker）。
+- 前端将 Token 保存在浏览器 `localStorage`，所有请求通过
+  `Authorization: Bearer <token>` 头携带；WebSocket 连接通过 `?token=` 查询参数携带。
+- 任意请求返回 `401` 时，前端自动清除本地凭证并跳转回登录页。
+- 退出登录点击右上角「退出」按钮即可。
+
 ## 文档
 
 - [架构说明](docs/architecture.md)

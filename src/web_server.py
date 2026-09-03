@@ -9,8 +9,9 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, WebSocket
+from fastapi import Depends, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.config import (
@@ -30,6 +31,8 @@ from src.config import (
     WORKFLOWS_DIR,
     ensure_dirs,
 )
+from src.web.auth import AuthManager, get_auth_manager
+from src.web.auth_routes import router as auth_router
 from src.extension_api import CoreRuntime
 from src.extension_host import ExtensionManager, LayeredJsonConfig
 from src.extension_host.gates import ExtensionMiddlewareGate, extension_route_guard
@@ -693,6 +696,32 @@ def create_app(extension_manager: ExtensionManager | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     application.state.extension_manager = manager
+    application.state.auth_manager = get_auth_manager()
+
+    # ---- 鉴权中间件：保护除 /api/auth/login 外的所有 /api/* 请求 ----
+    # 注意：@application.middleware("http") 只拦截 HTTP 请求，
+    # WebSocket 在 src/web/ws_handlers.py 的 _ws_authorize 中单独鉴权。
+    _open_auth_paths = {"/api/auth/login", "/api/auth/status"}
+
+    @application.middleware("http")
+    async def auth_guard(request: Request, call_next):
+        path = request.url.path
+        if (
+            path in _open_auth_paths
+            or not path.startswith("/api/")
+        ):
+            return await call_next(request)
+        auth_mgr: AuthManager = application.state.auth_manager
+        if not auth_mgr.enabled:
+            return await call_next(request)
+        username = auth_mgr.require_http(request.headers)
+        if username is None:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "未认证，请先登录"},
+            )
+        request.state.auth_username = username
+        return await call_next(request)
 
     application.add_middleware(
         CORSMiddleware,
@@ -711,6 +740,7 @@ def create_app(extension_manager: ExtensionManager | None = None) -> FastAPI:
             middleware_options=options,
         )
 
+    application.include_router(auth_router)
     application.include_router(api_router)
     application.include_router(roundtable_router)
     application.include_router(workflow_router)

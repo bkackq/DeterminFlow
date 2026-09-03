@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { getToken } from "@/lib/auth";
 
 interface UseWebSocketOptions {
   url: string;
@@ -86,7 +87,11 @@ export function useWebSocket({
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
-    const fullUrl = `${protocol}//${host}${url}`;
+    // 附加鉴权 Token（query 参数形式），未登录时保持原 URL
+    const token = getToken();
+    const sep = url.includes("?") ? "&" : "?";
+    const authQuery = token ? `${sep}token=${encodeURIComponent(token)}` : "";
+    const fullUrl = `${protocol}//${host}${url}${authQuery}`;
 
     const ws = new WebSocket(fullUrl);
 

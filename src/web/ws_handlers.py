@@ -16,6 +16,7 @@ import uuid
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from src.web.auth import get_auth_manager
 from src.web.event_bus import event_bus
 from src.core.utils import is_visible_to_frontend
 
@@ -24,6 +25,18 @@ logger = logging.getLogger(__name__)
 _MAX_MESSAGE_ATTACHMENTS = 64
 _MAX_ATTACHMENT_NAME_LENGTH = 255
 _MAX_ATTACHMENT_PATH_LENGTH = 4096
+
+
+async def _ws_authorize(ws: WebSocket) -> bool:
+    """WebSocket 握手鉴权。鉴权未启用时直接放行；未通过时拒绝连接。"""
+    auth_mgr = get_auth_manager()
+    if not auth_mgr.enabled:
+        return True
+    username = auth_mgr.require_ws(dict(ws.headers), dict(ws.query_params))
+    if username is None:
+        await ws.close(code=4401, reason="unauthorized")
+        return False
+    return True
 
 
 def _validate_message_attachments(raw_attachments, content: str) -> list[dict[str, str]]:
@@ -371,6 +384,8 @@ async def handle_chat_ws(ws: WebSocket, app_state):
       - {"type": "error", "message": "..."}
       - {"type": "notification", "data": {...}}
     """
+    if not await _ws_authorize(ws):
+        return
     await ws.accept()
     session_mgr = app_state.session_manager
 
@@ -729,6 +744,8 @@ async def handle_events_ws(ws: WebSocket, app_state):
     持续推送系统事件（会话状态变更、子会话通知等）
     客户端只需保持连接即可接收事件
     """
+    if not await _ws_authorize(ws):
+        return
     await ws.accept()
     await event_bus.subscribe("events", ws)
 

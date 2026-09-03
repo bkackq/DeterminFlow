@@ -1,5 +1,5 @@
-import { lazy, Suspense, useMemo } from "react";
-import { MessageSquare, LayoutDashboard, GitBranch, Users, Layers, Settings, BookOpen, Wifi, WifiOff, FileText, Workflow, Clock, Boxes, Loader2, type LucideIcon } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { MessageSquare, LayoutDashboard, GitBranch, Users, Layers, Settings, BookOpen, Wifi, WifiOff, FileText, Workflow, Clock, Boxes, Loader2, LogOut, type LucideIcon } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { CORE_TAB_IDS, isCoreTabId, type CoreTabId } from "@/core-tabs";
@@ -14,6 +14,8 @@ import { DesktopUpdateProvider } from "./desktop-updater/context";
 import { DesktopUpdateNotice } from "./desktop-updater/DesktopUpdateNotice";
 import { useNavigationSettings } from "./hooks/useNavigationSettings";
 import FirstRunOnboarding from "./components/onboarding/FirstRunOnboarding";
+import { AUTH_UNAUTHORIZED_EVENT, fetchAuthStatus, getUsername, logout } from "./lib/auth";
+import LoginPage from "./pages/LoginPage";
 
 const ChatPage = lazy(() => import("./pages/ChatPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
@@ -105,9 +107,10 @@ function PageLoadingFallback() {
   );
 }
 
-function App() {
+function App({ onLogout }: { onLogout: () => void }) {
   const extensions = useExtensions();
   const showSystemPromptTab = useNavigationSettings();
+  const currentUser = getUsername();
   const [requestedTab, setRequestedTab] = useUrlParam("tab");
   const extensionPages = useMemo(() => extensions.flatMap((extension) => extension.pages || []), [extensions]);
   const tabs = useMemo<TabConfig[]>(() => [
@@ -186,6 +189,25 @@ function App() {
                 <ExtensionHeaderStatusSlot onManage={handleManageExtension} />
                 <GlobalConnectionStatus />
                 <ThemeToggle />
+                <div className="flex shrink-0 items-center gap-2 pl-1">
+                  {currentUser && (
+                    <span
+                      className="hidden text-sm text-slate-300 lg:inline"
+                      title="当前登录用户"
+                    >
+                      {currentUser}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onLogout}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-700/50 bg-slate-800/80 px-2.5 text-sm text-slate-300 transition-colors hover:bg-slate-700/60 hover:text-slate-100"
+                    title="退出登录"
+                  >
+                    <LogOut size={14} aria-hidden="true" />
+                    <span className="hidden xl:inline">退出</span>
+                  </button>
+                </div>
               </div>
             </header>
 
@@ -203,4 +225,37 @@ function App() {
   );
 }
 
-export default App;
+/** 鉴权门控：启动时校验登录态；未登录展示登录页，已登录渲染主应用。 */
+function AuthGate() {
+  const [status, setStatus] = useState<"checking" | "authed" | "guest">("checking");
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const status = await fetchAuthStatus();
+      if (cancelled) return;
+      setStatus(status.enabled && !status.authenticated ? "guest" : "authed");
+    };
+    check();
+    const onUnauthorized = () => setStatus("guest");
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, onUnauthorized);
+    };
+  }, []);
+
+  if (status === "checking") {
+    return <PageLoadingFallback />;
+  }
+  if (status === "guest") {
+    return <LoginPage onSuccess={() => setStatus("authed")} />;
+  }
+  const handleLogout = async () => {
+    await logout();
+    setStatus("guest");
+  };
+  return <App onLogout={handleLogout} />;
+}
+
+export default AuthGate;
