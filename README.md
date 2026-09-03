@@ -48,6 +48,42 @@ DeterminFlow 是一个面向生产的 AI 工作流运行框架。它把 LLM、�
 > DeterminFlow 已经在 [笔枢写作](https://bishuxiezuo.cn/) 的真实 AI 小说生产链路中
 > 完成生产验证。
 
+---
+
+<a id="version-changes"></a>
+
+## 📦 本版本更新说明
+
+> 本分支（`bkackq/DeterminFlow`）在官方上游 `alikon-art/DeterminFlow` 的基础上，新增了
+> **强制登录鉴权**：未登录的用户无法访问 Web UI、调用 `/api/*` 接口或建立 WebSocket 连接。
+
+### ✨ 新增：强制登录鉴权
+
+- **后端鉴权中间件**：拦截所有 `/api/*` 请求，未携带有效 Token 一律返回 `401`；采用无状态
+  HMAC-SHA256 签名 Token，服务端无需会话存储，支持多进程 / 多 worker 部署。
+- **登录相关接口**：新增 `POST /api/auth/login`、`POST /api/auth/logout`、
+  `GET /api/auth/me`、`GET /api/auth/status`（`status` 为开放端点，供前端判断登录态）。
+- **账号配置**：支持环境变量 `AUTH_USERNAME / AUTH_PASSWORD`，或配置文件
+  `data/auth_users.json`（支持多用户及 `password_hash` 存储）；未配置任何用户时使用内置
+  兜底账号 `admin/admin`，启动日志会打印醒目警告，请尽快修改。
+- **WebSocket 鉴权**：`/ws/chat` 与 `/ws/events` 支持 `Authorization` 头或 `?token=` 参数
+  校验，未通过校验的连接会被关闭（`4401`）。
+- **前端登录门控**：新增暗色登录页与 `AuthGate` 组件，应用启动时检查登录态，未登录自动
+  跳转登录页；所有 `/api` 请求自动携带 Bearer Token，退出登录即返回登录页。
+
+### 🐛 修复
+
+- **修复登录后部分请求仍 401**：前端存在多处绕过统一 HTTP 客户端的原生 `fetch` 调用，
+  导致登录后这些请求未携带 Token 而被中间件拦截。通过全局 `fetch` 鉴权包装（
+  `web/src/lib/auth-fetch.ts`）统一为同源 `/api`、`/ws` 请求自动附加鉴权头，外部 URL
+  不附加以避免 Token 泄露，一次性覆盖所有现有及未来的调用点。
+- **修复前端资源 404**：重新完整构建前端 `web/dist`，校验全部 JS 资源引用无缺失。
+
+> 📖 鉴权详细配置（多用户、密码哈希、关闭鉴权等）见下方
+> [鉴权与登录](#鉴权与登录) 章节。
+
+---
+
 <a id="why-determinflow"></a>
 
 ## 为什么不直接用 Codex、Claude 这类单智能体框架？
